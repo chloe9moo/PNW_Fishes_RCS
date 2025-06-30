@@ -145,7 +145,7 @@ out.occ.list <- lapply(occ.list, function(x) {
   sp.nhd$out_q <- rowSums(apply(sp.nhd[c('yr_MEANspp', 'yr_m_AT', 'yr_mn_Q', 'ppt', 'tmax', 'tmin')], 2, function(y) #for each var. calc, pts falling outside #SD of mean and flag
     y < quantile(y, 0.003, na.rm=T) | y > quantile(y, 0.997, na.rm=T))) > 0 #quantile
   sp.nhd$out_sd <- rowSums(apply(sp.nhd[c('yr_MEANspp', 'yr_m_AT', 'yr_mn_Q', 'ppt', 'tmax', 'tmin')], 2, function(y) #for each var. calc, pts falling outside #SD of mean and flag
-    y < mean(y, na.rm=T)-3*sd(y, na.rm = T) | y > mean(y, na.rm=T)+3*sd(y, na.rm=T) )) > 0 #quantile
+    y < mean(y, na.rm=T)-3*sd(y, na.rm = T) | y > mean(y, na.rm=T)+3*sd(y, na.rm=T) )) > 0 #sd
   sp.nhd <- sp.nhd %>% select(-all_of(c('ppt','tmax','tmin'))) #remove duplicates
   out.occ <- x %>% rename(ID = X) %>% 
     left_join(., sp.nhd, by='ID') %>% 

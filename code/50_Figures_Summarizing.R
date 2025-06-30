@@ -189,7 +189,7 @@ rcs.theme <- list(
         legend.box.margin=margin(0,0,0,0))
 )
 
-# RCS <- read.csv("~/Documents/Projects/PNW_fishes/RCS_results/RCS_table_prosp_2022-06-10.csv")
+# RCS <- read.csv("~/Documents/projects/PNW_fishes/RCS_results/RCS_table_prosp_2022-08-23.csv")
 r <- RCS %>%
   dplyr::select(species, SpFac, RCS_WS_spc, RCS_buff_spc, RCS_WS_spp, RCS_buff_spp) %>%
   arrange(RCS_buff_spp) %>%
