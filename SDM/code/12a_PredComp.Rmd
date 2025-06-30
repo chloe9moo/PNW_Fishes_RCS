@@ -1,0 +1,42 @@
+---
+title: "Comparison of IUCN vs. Convex Hull Prediction Extent"
+author: "C. E. Moore"
+output: 
+  pdf_document:
+    latex_engine: pdflatex
+urlcolor: blue
+header-includes:
+  \usepackage{helvet}
+  \renewcommand{\familydefault}{\sfdefault}
+---
+For all comparison figures, the red flowlines are where the IUCN range extent predictions were higher, the blue flowlines are where the Convex Hull predictions were higher.
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+PATH <- PATH <- "~/Documents/Projects/PNW_fishes"
+
+species.list <- gsub("_IUCNxCHull_comp.png", "", list.files(path = paste0(PATH, "/SDM/Output/Top_Models/Pred_Maps"), pattern = "_comp.png"))
+
+fig.l <- vector(mode = "list", length = length(species.list)*3)
+for (i in seq(1, 52, 3)) {
+  
+  j <- (i + 2)/3
+  fig.l[[i]] <- paste0(PATH, "/SDM/Output/Top_Models/Pred_Maps/", species.list[[j]], "_SpCont_iucn.png")
+  fig.l[[i+1]] <- paste0(PATH, "/SDM/Output/Top_Models/Pred_Maps/", species.list[[j]], "_SpCont_hull.png")
+  fig.l[[i+2]] <- paste0(PATH, "/SDM/Output/Top_Models/Pred_Maps/", species.list[[j]], "_IUCNxCHull_comp.png")
+  
+  }
+```
+
+```{r figures, results='asis'}
+for(i in 1:length(species.list)) {
+
+  j <- (i*3) - 2
+  # cat(species.list[[i]], "IUCN prediction extent\n")
+  cat("![](", fig.l[[j]], "){width=50%}", "![](", fig.l[[j+1]], "){width=50%}", "\n")
+  cat("![](", fig.l[[j+2]], "){width=100%}", "\n")
+  
+}
+```
+
+

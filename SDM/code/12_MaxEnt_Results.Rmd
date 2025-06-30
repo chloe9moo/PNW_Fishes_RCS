@@ -1,0 +1,226 @@
+---
+title: "MaxEnt Results"
+author: "C. E. Moore"
+output: 
+  pdf_document:
+    latex_engine: pdflatex
+urlcolor: blue
+header-includes:
+  \usepackage{helvet}
+  \renewcommand{\familydefault}{\sfdefault}
+---
+date: `r Sys.Date()`
+
+This markdown is used to examine the MaxEnt model outputs for the NW CASC PNW Fishes Project. A good primer on MaxEnt can be found [here](https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1600-0587.2013.07872.x) (Merow et al. 2013).  
+
+``` {r message = F, warning = F, echo = F}
+library(tidyverse); library(ENMeval)
+PATH <- PATH <- "~/Documents/Projects/PNW_fishes"
+env.var <- read.csv(paste0(PATH, "/SDM/Input_Data/EnvPredictor_Table.csv")) %>% filter(!Variable.Name %in% c("smmr_fl", "wntr_fl"))
+b.t <- "SpCont"
+```
+
+# Methods:  
+## I. Occurrence Data Prep:   
+Occurrence data is the same dataset used for the final RCS runs. This includes data from several sources, including GBIF. The data was filtered as follows...  
+1. Remove records with missing data and/or flags (e.g., *date mismatch*)  
+2. Remove records with matching latitude + longitude + year  
+3. Remove records outside the PNW extent (WA, OR, ID with a 10 km buffer as below)  
+```{r study extent, echo=F, fig.cap="Study extent used to filter datasets.", out.width='60%', out.height='60%', fig.align='center'}
+knitr::include_graphics("~/Documents/Projects/PNW_fishes/code/Figures/pnw_extent_buff.png")
+```
+4. Remove records outside and predating the predictor set date range (1995-2015)  
+5. Remove records identified as 'climate outliers' (> 3 stdev from mean) using PRISM and PROSPER variables  
+6. Remove records as identified by expert ichthyologists  
+`r cat("\n")`
+## II. Environmental Predictor Prep:  
+All predictors were clipped to the study extent and extracted to NHDplus HR flowlines. Multi-year variables (e.g., *PROSPER*) were averaged to a single value for the flowline.  
+Extraction for raster variables was done (depending on the variable) either by **a)** taking the mean of all cells falling within a 500 m buffer, weighted by area of cell within the buffer (e.g., *canopy cover*), or **b)** taking the mean of all cells falling within the HUC12 watershed the NHD flowline falls within, weighted by area of cell within the watershed (e.g., *percent land cover*). Variables were only retained if they had -0.7 < r < 0.7 pearson correlation coefficient (except for the time being, mean sum. annual flow + mean summer low flow).  
+`r cat("\n")`  
+```{r corr plot, echo=F, message=F, eval=F}
+corr <- read.csv(paste0(PATH, "/SDM/Input_Data/EnvVar_Correlations.csv"))
+# corr[upper.tri(corr)] <- NA
+#make ggplot friendly
+c.long <- corr %>%
+  rename(env = X) %>%
+  pivot_longer(cols = -env, names_to = "env2", values_to = "pearson_corr") %>%
+  mutate(env = as.factor(env),
+         env2 = as.factor(env2),
+         corrmax = case_when(pearson_corr >= 0.7 & pearson_corr < 1 ~ "Correlated",
+                             pearson_corr <= -0.7 ~ "Correlated",
+                             TRUE ~ "Uncorrelated"),
+         pearson_corr = ifelse(pearson_corr == 1, NA, pearson_corr)) 
+#heatmap it
+ggplot() + 
+  geom_tile(data=c.long, aes(env, env2, fill=pearson_corr)) +
+  geom_point(data = c.long %>% filter(corrmax == "Correlated"), aes(env, env2), shape = 8) +
+  scale_fill_viridis_c(na.value = NA) +
+  labs(title="Environmental variable correlations", y = "env") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle=90, vjust = 0.5, hjust = 1))
+ggsave(paste0(PATH, "/SDM/Input_Data/EnvVar_Correlation_heatmap.png"), plot = last_plot(), width = 8, height = 5)
+```
+```{r heatmap show, echo=F, fig.align='center', out.width='88%', out.height='88%', fig.cap="\\label{fig:heatmap}Pearson correlation coefficent between all pairs of extracted environmental variables. Asterisk denotes variable pairs with r > 0.7 | r < -0.7."}
+knitr::include_graphics(paste0(PATH, "/SDM/Input_Data/EnvVar_Correlation_heatmap.png"))
+```
+**Final environmental predictors used in all models were:**  
+`r env.var$Variable`  
+`r cat("\n")` 
+
+```{r echo=F, message=F, warning=F}
+library(kableExtra)
+
+vi.list <- list.files(path = paste0(PATH, "/SDM/Output/Results_Tables"), pattern = "VarImp.csv", full.names = T)
+vi.all <- lapply(vi.list, read.csv)
+vi.all <- bind_rows(vi.all)
+
+vi.all.s <- vi.all %>% 
+  left_join(., env.var %>% select(Variable.Name, Variable), by = c("variable"="Variable.Name")) %>%
+  select(-variable) %>%
+  group_by(Variable) %>%
+  mutate(mn_var_imp = mean(permutation.importance, na.rm = T),
+         max_imp = max(permutation.importance, na.rm = T),
+         min_imp = min(permutation.importance, na.rm = T),
+         mn_cont = mean(percent.contribution, na.rm = T),
+         max_cont = max(percent.contribution, na.rm = T),
+         min_cont = min(percent.contribution, na.rm = T),
+         across(.cols = where(is.numeric), ~ round(.x, digits = 2))
+         ) %>%
+  select(Variable, contains("mn"), contains("max"), contains("min")) %>%
+  distinct()
+
+knitr::kable(vi.all.s, 
+             col.names = c("Env. Variable", "Mean Permutation Importance", "Mean % Contribution", "Max Permutation Importance", "Max % Contribution", "Min Permutation Importance", "Min % Contribution"), 
+             caption = "\\label{tab:var_cont}Summary of environmental predictor importance across all species' selected top models.",
+             booktab = TRUE) %>%
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 8) %>%
+  column_spec(1, width = "3.78cm") %>%
+  column_spec(2:7, width = "1.8cm")
+```
+Variable contributions across  all species' models can be found in Table \ref{tab:var_cont}.  
+More details for this step can be found in the script: **01_EnvironData_SetUp.R**  
+`r cat("\n")`
+
+## III. Model Runs  
+### A. Background Points  
+For each species, background 'points' were selected by either **a)** randomly selecting NHD flowlines within all HUC12 watersheds occurrence points fell within + 50 km buffer (*spatially controlled background points*), or **b)** randomly selecting NHD flowlines within the convex hull of all presence points + 50 km buffer. The target was **10,000** background points, however the number of NHD streams available with the constraints was sometimes less than 10,000.  
+`r cat("\n")`  
+More details on background point creation can be found in: **02_Occ_Bg_SetUp.R**  
+
+### B. Model Parameters  
+
+``` {r model load, echo=F, message=F, warning=F}
+mx <- readRDS(list.files(path = paste0(PATH, "/SDM/Output/Model_RDS"), full.names = T)[[1]])
+```
+
+For each species, the following **regularization multipliers** were used: `r unique(mx@tune.settings$rm)`  
+The following **feature classes** were used: `r unique(mx@tune.settings$fc)`  
+A total of `r nrow(mx@tune.settings)` models were created for each species.  
+
+### C. Model Selection  
+The "top" model for each species was selected by the highest CBI values (Continuous Boyce Index), with the tie breaker as highest AUC value. Information on CBI is summarized [here](https://rdrr.io/cran/ecospat/man/ecospat.boyce.html).  
+The top model was used to create a prediction of habitat suitability across flowlines in either **a)** the species range (IUCN range map) + 10 km buffer or **b)** a convex hull of the species' filtered occurrence points + 50 km buffer. *Note: All model outputs were predicted using* **b** *based on J. Dunham feedback.*  
+`r cat("\n")`  
+
+# Results:  
+*Note:* `r ifelse(b.t == "SpCont", "Models below created with spatially controlled background points", "Models below were created with randomly selected background points")`  
+For all maps, the flowlines with > 0.8 probability of being suitable habitat are shown, with > 0.9 highlighted. In addition, bar plots show the habitat suitability probability across flowlines with known occurrences as one visual of how good/bad predictions are.  
+
+``` {r display function, echo=F, message=F, warning=F}
+species.list <- read.csv(paste0(PATH, "/occurrence_data/RCS_FocalSpecies.csv")) %>% 
+  filter(N_final >= 20)
+occ.ct <- read.csv(paste0(PATH, "/SDM/Input_Data/Occ_Bg_Ct_Tracksheet.csv"))
+
+# i <- 1
+# for (i in 1:nrow(species.list)) {
+max_results <- function(x)  {
+  
+  spp <- x[i, "Species"] #get species
+  
+  #pull in results table and selected top model
+  res <- read.csv(paste0(PATH, "/SDM/Output/Results_Tables/", gsub(" ", "_", spp), "_res_", b.t, ".csv"))
+  if (any(res$cbi.val.avg > 0.6, na.rm = T)) {
+    opt.mod <- res %>%
+      filter(cbi.val.avg == max(cbi.val.avg, na.rm = T)) %>%
+      filter(auc.val.avg == max(auc.val.avg, na.rm = T))
+   } else {
+     opt.mod <- res %>%
+       filter(auc.val.avg == max(auc.val.avg))
+   }
+  opt.mod <- opt.mod[1,]
+  
+  #pull in variable importance table
+  vi <- read.csv(paste0(PATH, "/SDM/Output/Results_Tables/", gsub(" ", "_", spp), "_", b.t, "_VarImp.csv"))
+  
+  #print model info
+  cat(spp, "(", species.list[i, "Common"], ") \n")
+  cat("Top model selected had feature class", opt.mod$fc, "and regularization multiplier", opt.mod$rm, "\n")
+  cat("\nNum. of Occurrence Points Used =", occ.ct[occ.ct$Species == spp, "N_occ"], "\n")
+  cat("Num. of Background Points Used =", occ.ct[occ.ct$Species == spp, "N_bg_spc"], "\n")
+  cat("\nCBI =", round(opt.mod$cbi.val.avg, 2), "\n")
+  cat("AUC =", round(opt.mod$auc.val.avg, 2), "\n")
+  cat("\nTop 5 variables for this species: \n")
+  print(
+  vi %>% 
+    slice_max(order_by = permutation.importance, n = 5) %>%
+    left_join(., env.var %>% select(Variable.Name, Variable), by=c("variable"="Variable.Name")) %>%
+    select(-variable) %>%
+    mutate(across(where(is.numeric), ~round(.x, digits = 2))) %>%
+    relocate(Variable) )
+  # caption = paste0("Variable importance for ", spp), format="simple")
+
+  knitr::include_graphics(c(paste0(PATH, "/SDM/Output/Top_Models/Pred_Maps/Threshold/", gsub(" ", "_", spp), "_predthresh.png"), paste0(PATH, "/SDM/Output/Top_Models/Pred_Maps/Threshold/", gsub(" ", "_", spp), "_bars.png")))
+  
+}
+```
+
+``` {r spp maps, echo=F, out.width=c('88%', '40%'), fig.align="center"}
+i <- 1
+max_results(species.list)
+i <- 2
+max_results(species.list)
+i <- 3
+max_results(species.list)
+i <- 4
+max_results(species.list)
+i <- 5
+max_results(species.list)
+i <- 6
+max_results(species.list)
+i <- 7
+max_results(species.list)
+i <- 8
+max_results(species.list)
+i <- 9
+max_results(species.list)
+i <- 10
+max_results(species.list)
+i <- 11
+max_results(species.list)
+i <- 12
+max_results(species.list)
+i <- 13
+max_results(species.list)
+i <- 14
+max_results(species.list)
+i <- 15
+max_results(species.list)
+i <- 16
+max_results(species.list)
+i <- 17
+max_results(species.list)
+i <- 18
+max_results(species.list)
+i <- 19
+max_results(species.list)
+i <- 20
+max_results(species.list)
+i <- 21
+max_results(species.list)
+i <- 22
+max_results(species.list)
+i <- 23
+max_results(species.list)
+i <- 24
+max_results(species.list)
+```
